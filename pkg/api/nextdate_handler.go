@@ -2,14 +2,20 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 )
 
 func nextDateHandler(w http.ResponseWriter, r *http.Request) {
-	nowStr := r.FormValue("now")
-	date := r.FormValue("date")
-	repeat := r.FormValue("repeat")
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	nowStr := r.URL.Query().Get("now")
+	date := r.URL.Query().Get("date")
+	repeat := r.URL.Query().Get("repeat")
 
 	var now time.Time
 	var err error
@@ -30,5 +36,7 @@ func nextDateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
-	_, _ = fmt.Fprint(w, next)
+	if _, err := fmt.Fprint(w, next); err != nil {
+		log.Printf("write next date response: %v", err)
+	}
 }

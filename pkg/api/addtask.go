@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,45 +13,39 @@ import (
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 	var task db.Task
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
-		writeError(w, err)
+		writeErrorStatus(w, http.StatusBadRequest, err)
 		return
 	}
-
 	if err := normalizeAndValidateTask(&task); err != nil {
-		writeError(w, err)
+		writeErrorStatus(w, http.StatusBadRequest, err)
 		return
 	}
-
 	id, err := db.AddTask(&task)
 	if err != nil {
-		writeError(w, err)
+		writeErrorStatus(w, http.StatusInternalServerError, err)
 		return
 	}
-
 	writeJSON(w, map[string]any{"id": id})
 }
 
 func updateTaskHandler(w http.ResponseWriter, r *http.Request) {
 	var task db.Task
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
-		writeError(w, err)
+		writeErrorStatus(w, http.StatusBadRequest, err)
 		return
 	}
 	if task.ID == "" {
-		writeError(w, fmt.Errorf("не указан идентификатор"))
+		writeErrorStatus(w, http.StatusBadRequest, errors.New("не указан идентификатор"))
 		return
 	}
-
 	if err := normalizeAndValidateTask(&task); err != nil {
-		writeError(w, err)
+		writeErrorStatus(w, http.StatusBadRequest, err)
 		return
 	}
-
 	if err := db.UpdateTask(&task); err != nil {
-		writeError(w, err)
+		writeTaskError(w, err)
 		return
 	}
-
 	writeJSON(w, struct{}{})
 }
 
@@ -66,12 +61,10 @@ func normalizeAndValidateTask(task *db.Task) error {
 	if task.Date == "" {
 		task.Date = now.Format(dateFormat)
 	}
-
 	date, err := time.Parse(dateFormat, task.Date)
 	if err != nil {
 		return err
 	}
-
 	if task.Repeat != "" {
 		next, err := NextDate(now, task.Date, task.Repeat)
 		if err != nil {
@@ -81,10 +74,8 @@ func normalizeAndValidateTask(task *db.Task) error {
 			task.Date = next
 		}
 	}
-
 	if !afterNow(date, now) && task.Repeat == "" {
 		task.Date = now.Format(dateFormat)
 	}
-
 	return nil
 }

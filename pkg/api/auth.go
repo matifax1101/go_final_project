@@ -1,118 +1,85 @@
 package api
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
+	"crypto/subtle"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
-	"os"
-	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const tokenCookieName = "token"
-const tokenLifetime = 8 * time.Hour
+const tokenIssuer = "go_final_project"
+const tokenSubject = "scheduler"
 
-func signinHandler(w http.ResponseWriter, r *http.Request) {
-	password := os.Getenv("TODO_PASSWORD")
-	if password == "" {
-		writeJSON(w, map[string]string{"token": ""})
-		return
-	}
+func signinHandler(password string, signingKey []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if password == "" {
+			writeJSON(w, map[string]string{"token": ""})
+			return
+		}
 
-	var req struct {
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, err)
-		return
-	}
-	if req.Password != password {
-		writeError(w, fmt.Errorf("неверный пароль"))
-		return
-	}
+		var request struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeErrorStatus(w, http.StatusBadRequest, err)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(request.Password), []byte(password)) != 1 {
+			writeErrorStatus(w, http.StatusUnauthorized, errors.New("неверный пароль"))
+			return
+		}
 
-	token, err := makeToken(password, time.Now().Add(tokenLifetime))
-	if err != nil {
-		writeError(w, err)
-		return
+		claims := jwt.RegisteredClaims{
+			Issuer:   tokenIssuer,
+			Subject:  tokenSubject,
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+			// ExpiresAt отсутствует по рекомендации ревьюера.
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		signedToken, err := token.SignedString(signingKey)
+		if err != nil {
+			writeErrorStatus(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, map[string]string{"token": signedToken})
 	}
-	writeJSON(w, map[string]string{"token": token})
 }
 
-func auth(next http.HandlerFunc) http.HandlerFunc {
+func auth(password string, signingKey []byte, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		password := os.Getenv("TODO_PASSWORD")
 		if password == "" {
 			next(w, r)
 			return
 		}
-
 		cookie, err := r.Cookie(tokenCookieName)
-		if err != nil || !validToken(cookie.Value, password) {
-			http.Error(w, "Authentification required", http.StatusUnauthorized)
+		if err != nil || cookie.Value == "" || !validToken(cookie.Value, signingKey) {
+			writeErrorStatus(w, http.StatusUnauthorized, errors.New("требуется авторизация"))
 			return
 		}
 		next(w, r)
 	}
 }
 
-func makeToken(password string, expires time.Time) (string, error) {
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	payload := struct {
-		PasswordHash string `json:"ph"`
-		Exp          int64  `json:"exp"`
-	}{
-		PasswordHash: passwordHash(password),
-		Exp:          expires.Unix(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadBytes)
-	unsigned := header + "." + payloadEncoded
-	signature := sign(unsigned, password)
-	return unsigned + "." + signature, nil
-}
-
-func validToken(token, password string) bool {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return false
-	}
-
-	expected := sign(parts[0]+"."+parts[1], password)
-	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
-		return false
-	}
-
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return false
-	}
-	var payload struct {
-		PasswordHash string `json:"ph"`
-		Exp          int64  `json:"exp"`
-	}
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return false
-	}
-	if payload.PasswordHash != passwordHash(password) {
-		return false
-	}
-	return time.Now().Unix() < payload.Exp
-}
-
-func passwordHash(password string) string {
-	sum := sha256.Sum256([]byte(password))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
-
-func sign(data, password string) string {
-	mac := hmac.New(sha256.New, []byte(password))
-	_, _ = mac.Write([]byte(data))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+func validToken(value string, signingKey []byte) bool {
+	claims := &jwt.RegisteredClaims{}
+	parsed, err := jwt.ParseWithClaims(
+		value,
+		claims,
+		func(token *jwt.Token) (any, error) {
+			return signingKey, nil
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(tokenIssuer),
+		jwt.WithSubject(tokenSubject),
+		jwt.WithIssuedAt(),
+	)
+	return err == nil && parsed != nil && parsed.Valid
 }

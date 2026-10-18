@@ -1,7 +1,7 @@
 package api
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 
 	"github.com/matifax1101/go_final_project/pkg/db"
@@ -18,20 +18,20 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		deleteTaskHandler(w, r)
 	default:
-		writeError(w, fmt.Errorf("метод не поддерживается"))
+		methodNotAllowed(w, "GET, POST, PUT, DELETE")
 	}
 }
 
 func getTaskHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
-		writeError(w, fmt.Errorf("не указан идентификатор"))
+		writeErrorStatus(w, http.StatusBadRequest, errors.New("не указан идентификатор"))
 		return
 	}
 
 	task, err := db.GetTask(id)
 	if err != nil {
-		writeError(w, err)
+		writeTaskError(w, err)
 		return
 	}
 	writeJSON(w, task)
@@ -40,11 +40,11 @@ func getTaskHandler(w http.ResponseWriter, r *http.Request) {
 func deleteTaskHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
-		writeError(w, fmt.Errorf("не указан идентификатор"))
+		writeErrorStatus(w, http.StatusBadRequest, errors.New("не указан идентификатор"))
 		return
 	}
 	if err := db.DeleteTask(id); err != nil {
-		writeError(w, err)
+		writeTaskError(w, err)
 		return
 	}
 	writeJSON(w, struct{}{})

@@ -1,115 +1,94 @@
-# Планировщик задач
+# Планировщик задач на Go
 
-Веб-сервер на Go, реализующий TODO-планировщик с хранением задач в SQLite.
+Дипломный проект Яндекс Практикума — TODO-планировщик с HTTP API, интерфейсом из `web/` и базой SQLite.
 
-## Реализовано
+## Возможности
 
-- раздача фронтенда из `web/`;
-- SQLite-база `scheduler.db`;
-- добавление задач;
-- получение списка ближайших задач;
-- получение задачи по ID;
-- редактирование задачи;
-- удаление задачи;
-- отметка задачи выполненной;
-- повторение по правилам `d N` и `y`;
-- обработчик `/api/nextdate`;
-- переменные окружения `TODO_PORT` и `TODO_DBFILE`;
-- аутентификация через `TODO_PASSWORD` и JWT-подобный подписанный токен с временем жизни 8 часов;
-- Dockerfile для сборки и запуска приложения.
+- Создание, просмотр, редактирование, удаление и выполнение задач.
+- Список ближайших 50 задач.
+- Повторение задач: `d N` (каждые 1–400 дней) и `y` (ежегодно).
+- Авторизация по общему паролю с использованием JWT.
+- Запуск локально или в Docker.
 
-Не реализованы две дополнительные задачи со звёздочкой: правила повторения `w ...` и `m ...`, а также поиск задач через параметр `search`.
+Дополнительные правила повторения `w`, `m` и поиск по задачам не реализованы.
 
-## Запуск локально
+## Технологии
 
-Требуется Go 1.24+.
+Go 1.26 (`net/http`, `database/sql`), SQLite (`modernc.org/sqlite`), `golang-jwt/jwt/v5`, Docker.
+
+## Запуск
 
 ```bash
 go mod tidy
 go run .
 ```
 
-После запуска открыть:
+Открыть http://localhost:7540/.
 
-`http://localhost:7540/`
+Параметры окружения:
 
-Порт можно изменить:
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `TODO_PORT` | Порт сервера | `7540` |
+| `TODO_DBFILE` | Путь к SQLite | `scheduler.db` |
+| `TODO_PASSWORD` | Пароль входа | пусто (авторизация выключена) |
+| `TODO_JWT_SECRET` | Постоянный секрет подписи JWT (не менее 32 байт) | случайный при запуске |
 
-```bash
-TODO_PORT=8080 go run .
-```
-
-Путь к БД:
-
-```bash
-TODO_DBFILE=./data/scheduler.db go run .
-```
-
-Для включения аутентификации:
+Для включения авторизации (Git Bash):
 
 ```bash
 TODO_PASSWORD=12345 go run .
 ```
 
+Пароль отправляется в `POST /api/signin`, сервер возвращает JWT. Фронтенд хранит его в cookie `token` в течение 8 часов. Сам JWT не имеет срока истечения по рекомендации ревьюера. При случайном секрете токены перестают работать после перезапуска сервера; для постоянного секрета используйте `TODO_JWT_SECRET`. Не размещайте реальные пароли и секреты в репозитории. Для доступа через интернет нужен HTTPS.
+
+## API
+
+| Метод | Путь | Действие |
+|---|---|---|
+| GET | `/api/tasks` | Список задач |
+| GET | `/api/task?id=...` | Получить задачу |
+| POST | `/api/task` | Добавить задачу |
+| PUT | `/api/task` | Изменить задачу |
+| DELETE | `/api/task?id=...` | Удалить задачу |
+| POST | `/api/task/done?id=...` | Отметить выполненной |
+| GET | `/api/nextdate` | Рассчитать дату повторения |
+| POST | `/api/signin` | Получить JWT |
+
+Сервер использует коды `200`, `400`, `401`, `404`, `405`, `500`. Ошибки API задач возвращаются в JSON `{"error":"..."}`.
+
 ## Тестирование
 
-Сначала запустить сервер в отдельном терминале:
+**Важно:** тесты Практикума изменяют и удаляют данные. Используйте отдельную SQLite-базу.
+
+Первый терминал Git Bash, из корня проекта:
 
 ```bash
-go run .
+TODO_DBFILE=./scheduler_test.db TODO_PASSWORD=12345 go run .
 ```
 
-Затем:
+Второй терминал, из корня проекта:
 
 ```bash
-go test -run ^TestApp$ ./tests
-go test -run ^TestDB$ ./tests
-go test -run ^TestNextDate$ ./tests
-go test -run ^TestAddTask$ ./tests
-go test -run ^TestTasks$ ./tests
-go test -run ^TestTask$ ./tests
-go test -run ^TestEditTask$ ./tests
-go test -run ^TestDone$ ./tests
-go test -run ^TestDelTask$ ./tests
-go test ./tests
+TODO_DBFILE=../scheduler_test.db TODO_PASSWORD=12345 go test -count=1 ./tests
+go test -count=1 ./pkg/api
 ```
 
-В `tests/settings.go` базовые тесты используют:
-
-```go
-var Port = 7540
-var DBFile = "../scheduler.db"
-var FullNextDate = false
-var Search = false
-var Token = ``
-```
-
-`FullNextDate` и `Search` оставляются `false`, поскольку соответствующие дополнительные задания не реализуются.
+Путь `../scheduler_test.db` для тестов указан относительно каталога `tests/`. Тесты самостоятельно получают токен через `/api/signin`.
 
 ## Docker
-
-Сборка:
 
 ```bash
 docker build -t go-final-project .
 ```
 
-Для хранения SQLite-файла на хосте создайте каталог `data` и запустите:
+Запуск в Git Bash на Windows с сохранением базы в `data/`:
 
 ```bash
-docker run --rm -p 7540:7540 -v "${PWD}/data:/data" go-final-project
+mkdir -p data
+MSYS_NO_PATHCONV=1 docker run --rm -p 7540:7540 -v "$(pwd -W)/data:/data" go-final-project
 ```
 
-Windows PowerShell:
+## Исправления после ревью
 
-```powershell
-docker run --rm -p 7540:7540 -v "${PWD}/data:/data" go-final-project
-```
-
-Планировщик будет доступен по адресу `http://localhost:7540/`, а база будет находиться на хосте в `data/scheduler.db`.
-
-Для Docker с паролем:
-
-```bash
-docker run --rm -p 7540:7540 -e TODO_PASSWORD=12345 -v "${PWD}/data:/data" go-final-project
-```
+Добавлены проверки HTTP-методов и корректные коды ошибок; улучшена обработка ошибок записи ответов; JWT переведён на `golang-jwt/jwt/v5`; конфигурация считывается при старте; обновлены тесты, Dockerfile и GitHub Actions.

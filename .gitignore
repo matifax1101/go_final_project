@@ -1,3 +1,6 @@
 /scheduler.db
+/scheduler_test.db
 /go_final_project.exe
 /data/
+.env
+.env.*

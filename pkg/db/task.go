@@ -2,8 +2,11 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
+
+var ErrTaskNotFound = errors.New("задача не найдена")
 
 type Task struct {
 	ID      string `json:"id"`
@@ -25,10 +28,6 @@ func AddTask(task *Task) (int64, error) {
 }
 
 func Tasks(limit int) ([]*Task, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
 	rows, err := database.Query(
 		`SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date ASC, id ASC LIMIT ?`,
 		limit,
@@ -57,18 +56,16 @@ func Tasks(limit int) ([]*Task, error) {
 func GetTask(id string) (*Task, error) {
 	var t Task
 	var numericID int64
-
 	err := database.QueryRow(
 		`SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?`,
 		id,
 	).Scan(&numericID, &t.Date, &t.Title, &t.Comment, &t.Repeat)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("задача не найдена")
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrTaskNotFound
 		}
 		return nil, err
 	}
-
 	t.ID = fmt.Sprint(numericID)
 	return &t, nil
 }
@@ -81,13 +78,12 @@ func UpdateTask(task *Task) error {
 	if err != nil {
 		return err
 	}
-
 	count, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
 	if count == 0 {
-		return fmt.Errorf("задача не найдена")
+		return ErrTaskNotFound
 	}
 	return nil
 }
@@ -102,7 +98,7 @@ func UpdateDate(next, id string) error {
 		return err
 	}
 	if count == 0 {
-		return fmt.Errorf("задача не найдена")
+		return ErrTaskNotFound
 	}
 	return nil
 }
@@ -117,7 +113,7 @@ func DeleteTask(id string) error {
 		return err
 	}
 	if count == 0 {
-		return fmt.Errorf("задача не найдена")
+		return ErrTaskNotFound
 	}
 	return nil
 }

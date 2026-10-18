@@ -1,6 +1,9 @@
 .git
 .github
 scheduler.db
+scheduler_test.db
 data
 go_final_project.exe
 tests
+.env
+.env.*

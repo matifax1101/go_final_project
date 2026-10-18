@@ -2,10 +2,11 @@ package api
 
 import "net/http"
 
-func Init() {
-	http.HandleFunc("/api/nextdate", nextDateHandler)
-	http.HandleFunc("/api/signin", signinHandler)
-	http.HandleFunc("/api/task", auth(taskHandler))
-	http.HandleFunc("/api/tasks", auth(tasksHandler))
-	http.HandleFunc("/api/task/done", auth(doneHandler))
+// Init регистрирует обработчики API с конфигурацией, считанной при старте.
+func Init(mux *http.ServeMux, password string, signingKey []byte) {
+	mux.HandleFunc("/api/nextdate", nextDateHandler)
+	mux.HandleFunc("/api/signin", signinHandler(password, signingKey))
+	mux.HandleFunc("/api/task", auth(password, signingKey, taskHandler))
+	mux.HandleFunc("/api/tasks", auth(password, signingKey, tasksHandler))
+	mux.HandleFunc("/api/task/done", auth(password, signingKey, doneHandler))
 }
