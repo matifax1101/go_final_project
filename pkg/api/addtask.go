@@ -1,3 +1,4 @@
+
 package api
 
 import (
@@ -58,24 +59,28 @@ func normalizeAndValidateTask(task *db.Task) error {
 	}
 
 	now := time.Now()
+	today := now.Format(dateFormat)
+
 	if task.Date == "" {
-		task.Date = now.Format(dateFormat)
+		task.Date = today
 	}
-	date, err := time.Parse(dateFormat, task.Date)
-	if err != nil {
+
+	if _, err := time.Parse(dateFormat, task.Date); err != nil {
 		return err
 	}
+
 	if task.Repeat != "" {
 		next, err := NextDate(now, task.Date, task.Repeat)
 		if err != nil {
 			return err
 		}
-		if !afterNow(date, now) {
+
+		if task.Date < today {
 			task.Date = next
 		}
+	} else if task.Date < today {
+		task.Date = today
 	}
-	if !afterNow(date, now) && task.Repeat == "" {
-		task.Date = now.Format(dateFormat)
-	}
+
 	return nil
 }
